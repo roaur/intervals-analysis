@@ -4,6 +4,7 @@ const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
 let db = null;
 let conn = null;
 let traces = [];
+let distTraces = [];
 
 // Color palette for traces
 const COLORS = [
@@ -42,7 +43,6 @@ async function loadData() {
 }
 
 async function getBounds() {
-    // Cast to VARCHAR to ensure YYYY-MM-DD format for date inputs
     const result = await conn.query(`
         SELECT CAST(MIN(date) AS VARCHAR) as min_d, CAST(MAX(date) AS VARCHAR) as max_d FROM metrics
     `);
@@ -64,10 +64,8 @@ async function addTrace(label, startDate, endDate, silent = false) {
 
     if (!silent) console.log(`Adding trace '${label}' with Max Watts: ${maxWatts}`);
 
-    // HR vs Power: Group by 5W buckets to smooth data
-    // FLOOR(watts / 5) * 5
-
-    const query = `
+    // 1. Fitness Query
+    const fitnessQuery = `
         SELECT 
             CAST(FLOOR(watts / 5) * 5 AS INTEGER) as watt_bucket, 
             AVG(heartrate) as avg_hr
@@ -75,58 +73,96 @@ async function addTrace(label, startDate, endDate, silent = false) {
         WHERE date >= '${startDate}' 
           AND date <= '${endDate}'
           AND watts <= ${maxWatts}
-          AND heartrate > 40 AND heartrate < 210 -- Basic outlier filtering
+          AND heartrate > 40 AND heartrate < 210
         GROUP BY watt_bucket
         ORDER BY watt_bucket
     `;
 
-    const result = await conn.query(query);
-    const watts = result.getChild('watt_bucket').toArray();
-    const hrs = result.getChild('avg_hr').toArray();
+    // 2. Distribution Query
+    const distQuery = `
+        SELECT 
+            CAST(FLOOR(watts / 5) * 5 AS INTEGER) as watt_bucket, 
+            SUM(duration_seconds) / 3600.0 as hours
+        FROM metrics
+        WHERE date >= '${startDate}' 
+          AND date <= '${endDate}'
+          AND watts <= ${maxWatts}
+        GROUP BY watt_bucket
+        ORDER BY watt_bucket
+    `;
 
-    if (watts.length === 0) {
+    const [fitnessRes, distRes] = await Promise.all([
+        conn.query(fitnessQuery),
+        conn.query(distQuery)
+    ]);
+
+    const fitnessWatts = fitnessRes.getChild('watt_bucket').toArray();
+    const fitnessHrs = fitnessRes.getChild('avg_hr').toArray();
+
+    const distWatts = distRes.getChild('watt_bucket').toArray();
+    const distHours = distRes.getChild('hours').toArray();
+
+    if (fitnessWatts.length === 0) {
         if (!silent) alert(`No data found for this range: ${label}`);
-        console.log(`No data for ${label}`);
         return;
     }
 
     const color = COLORS[traces.length % COLORS.length];
 
-    const trace = {
-        x: watts,
-        y: hrs,
+    traces.push({
+        x: fitnessWatts,
+        y: fitnessHrs,
         type: 'scatter',
         mode: 'lines',
         name: `${label}`,
-        line: {
-            color: color,
-            width: 3,
-            shape: 'spline'
-        }
-    };
+        line: { color: color, width: 3, shape: 'spline' }
+    });
 
-    traces.push(trace);
-    renderChart();
+    distTraces.push({
+        x: distWatts,
+        y: distHours,
+        type: 'scatter',
+        mode: 'lines',
+        name: `${label}`,
+        line: { color: color, width: 2, shape: 'spline' },
+        fill: 'tozeroy'
+    });
+
+    renderCharts();
 }
 
-function renderChart() {
-    const layout = {
-        title: 'Fitness Efficiency (Lower HR at same Power is better)',
+function renderCharts() {
+    const commonLayout = {
         paper_bgcolor: 'rgba(0,0,0,0)',
         plot_bgcolor: 'rgba(0,0,0,0)',
         font: { color: '#e2e8f0' },
+        hovermode: 'closest',
         xaxis: {
             title: 'Power (Watts)',
             gridcolor: 'rgba(255,255,255,0.1)'
-        },
+        }
+    };
+
+    const fitnessLayout = {
+        ...commonLayout,
+        title: 'Fitness Efficiency (Lower HR at same Power is better)',
         yaxis: {
             title: 'Heart Rate (bpm)',
             gridcolor: 'rgba(255,255,255,0.1)'
-        },
-        hovermode: 'closest'
+        }
     };
 
-    Plotly.newPlot('fitness-chart', traces, layout);
+    const distLayout = {
+        ...commonLayout,
+        title: 'Power Duration Distribution',
+        yaxis: {
+            title: 'Duration (Hours)',
+            gridcolor: 'rgba(255,255,255,0.1)'
+        }
+    };
+
+    Plotly.newPlot('fitness-chart', traces, fitnessLayout);
+    Plotly.newPlot('distribution-chart', distTraces, distLayout);
 }
 
 // App Initialization
@@ -138,7 +174,6 @@ function renderChart() {
         document.getElementById('loading').classList.add('hidden');
         document.getElementById('dashboard').classList.remove('hidden');
 
-        // Set default dates
         const bounds = await getBounds();
         const startInput = document.getElementById('start-date');
         const endInput = document.getElementById('end-date');
@@ -147,18 +182,15 @@ function renderChart() {
             startInput.value = bounds.min;
             endInput.value = bounds.max;
 
-            // Auto-populate previous 3 years (Current Year, Last Year, Year Before)
             const currentYear = new Date().getFullYear();
-
             for (let i = 0; i < 3; i++) {
                 const year = currentYear - i;
                 const startDate = `${year}-01-01`;
                 const endDate = `${year}-12-31`;
-                await addTrace(`${year}`, startDate, endDate, true); // Silent mode
+                await addTrace(`${year}`, startDate, endDate, true);
             }
         }
 
-        // Event Listeners
         document.getElementById('add-trace-btn').addEventListener('click', async () => {
             const label = document.getElementById('trace-label').value || "Trace " + (traces.length + 1);
             const start = startInput.value;
@@ -168,7 +200,9 @@ function renderChart() {
 
         document.getElementById('clear-traces-btn').addEventListener('click', () => {
             traces = [];
+            distTraces = [];
             Plotly.newPlot('fitness-chart', [], {});
+            Plotly.newPlot('distribution-chart', [], {});
         });
 
     } catch (err) {
