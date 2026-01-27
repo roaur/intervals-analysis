@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intervals Analysis</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>Fitness Trends</h1>
+            <p class="subtitle">Heart Rate Efficiency vs Power Over Time</p>
+        </header>
+
+        <div id="loading" class="loading-state">
+            <div class="spinner"></div>
+            <p id="status-text">Initializing DuckDB-WASM...</p>
+        </div>
+
+        <div id="dashboard" class="dashboard hidden">
+            <div class="chart-container glass-panel">
+                <div id="fitness-chart"></div>
+            </div>
+
+            <div class="controls glass-panel">
+                <div class="control-group">
+                    <h3>Add Date Range Trace</h3>
+                    <div class="inputs">
+                        <label>Label: <input type="text" id="trace-label" placeholder="e.g. Jan 2024"></label>
+                        <label>Start: <input type="date" id="start-date"></label>
+                        <label>End: <input type="date" id="end-date"></label>
+                        <label>Max Watts: <input type="number" id="max-watts" value="400" step="10"></label>
+                        <button id="add-trace-btn" class="btn-primary">Add Trace</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>Active Traces</h3>
+                    <button id="clear-traces-btn" class="btn-secondary">Clear All</button>
+                    <!-- Traces list could go here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+
+</html>
