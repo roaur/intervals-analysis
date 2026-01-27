@@ -58,7 +58,8 @@ def process_data():
         SELECT 
             CAST(a.start_date_local AS DATE) as date,
             CAST(s.watts AS INTEGER) as watts,
-            AVG(s.heartrate) as heartrate
+            AVG(s.heartrate) as heartrate,
+            COUNT(*) as duration_seconds
         FROM raw_streams s
         JOIN activities a ON s.activity_id = a.id
         WHERE s.watts > 0 
