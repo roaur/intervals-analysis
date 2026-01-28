@@ -38,13 +38,13 @@ A privacy-focused local application that pulls your workout streams (Power, Hear
 ### 1. Ingest Data
 Download your activity streams into a local DuckDB database (`data/intervals.duckdb`). This uses parallel requests for speed and incrementally updates new activities.
 ```bash
-uv run python fetch_data.py
+uv run python scripts/fetch_data.py
 ```
 
 ### 2. Process Data
 Aggregate the raw streams from the DuckDB database into a summarized Parquet file for the frontend.
 ```bash
-uv run python process_data.py
+uv run python scripts/process_data.py
 ```
 *Note: A `data/processed/fitness_metrics.parquet` file will be generated.*
 
@@ -63,5 +63,5 @@ uv run python -m unittest discover tests
 
 To generate synthetic data for testing without an API key:
 ```bash
-uv run python generate_synthetic_data.py
+uv run python scripts/generate_synthetic_data.py
 ```

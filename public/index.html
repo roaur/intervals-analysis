@@ -7,6 +7,9 @@
     <title>Intervals Analysis</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v8.2.0/ol.css">
+    <script src="https://cdn.jsdelivr.net/npm/ol@v8.2.0/dist/ol.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ol-mapbox-style@12.2.0/dist/olms.js"></script>
 </head>
 
 <body>
@@ -23,8 +26,8 @@
 
         <div id="dashboard" class="dashboard hidden">
             <!-- Workout Cards Section -->
-            <div class="glass-panel" style="margin-bottom: 2rem;">
-                <h2 style="margin-top: 0; margin-bottom: 1rem; font-size: 1.5rem;">Recent Workouts</h2>
+            <div class="glass-panel workout-section">
+                <h2 class="workout-title">Recent Workouts</h2>
                 <div id="workout-grid" class="workout-grid">
                     <!-- Cards will be injected here -->
                 </div>
@@ -34,7 +37,7 @@
                 <div id="fitness-chart"></div>
             </div>
 
-            <div class="chart-container glass-panel" style="margin-top: 2rem;">
+            <div class="chart-container glass-panel distribution-section">
                 <div id="distribution-chart"></div>
             </div>
 
@@ -59,7 +62,7 @@
         </div>
     </div>
 
-    <script type="module" src="app.js"></script>
+    <script type="module" src="js/main.js"></script>
 </body>
 
 </html>

@@ -7,7 +7,9 @@ import duckdb
 import json
 
 # Add parent directory to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts")
+)
 
 import fetch_data
 

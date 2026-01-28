@@ -6,6 +6,11 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 # Import the refactored function
+import sys
+
+sys.path.append(
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts")
+)
 from process_data import process_data
 
 # Constants for testing

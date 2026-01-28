@@ -4,7 +4,9 @@ import os
 import shutil
 import sys
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts")
+)
 from process_data import process_data
 
 # Use a temporary database for testing

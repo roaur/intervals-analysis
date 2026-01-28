@@ -1,8 +1,9 @@
 import duckdb
 import os
 
-PROCESSED_DIR = "data/processed"
-DB_PATH = "data/intervals.duckdb"
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROCESSED_DIR = os.path.join(PROJECT_ROOT, "data", "processed")
+DB_PATH = os.path.join(PROJECT_ROOT, "data", "intervals.duckdb")
 OUTPUT_FILE = "fitness_metrics.parquet"
 
 

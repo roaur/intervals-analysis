@@ -10,14 +10,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import io
 
 # Load environment variables
-load_dotenv()
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
 API_KEY = os.getenv("INTERVALS_API_KEY")
 ATHLETE_ID = os.getenv("INTERVALS_ATHLETE_ID")
 BASE_URL = "https://intervals.icu/api/v1"
 
 # Database Configuration
-DB_PATH = os.path.join("data", "intervals.duckdb")
+DB_PATH = os.path.join(PROJECT_ROOT, "data", "intervals.duckdb")
 
 
 def validate_config():
@@ -225,7 +226,7 @@ def main():
     if not validate_config():
         exit(1)
 
-    os.makedirs("data", exist_ok=True)
+    os.makedirs(os.path.join(PROJECT_ROOT, "data"), exist_ok=True)
     con = get_db_connection()
     init_db(con)
 

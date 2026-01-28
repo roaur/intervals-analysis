@@ -5,7 +5,8 @@ import pandas as pd
 import random
 from datetime import datetime, timedelta
 
-DB_PATH = "data/intervals_test.duckdb"
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(PROJECT_ROOT, "data", "intervals_test.duckdb")
 
 
 def init_db(con):
@@ -41,7 +42,7 @@ def init_db(con):
 
 
 def generate_synthetic_data(num_activities=10):
-    os.makedirs("data", exist_ok=True)
+    os.makedirs(os.path.join(PROJECT_ROOT, "data"), exist_ok=True)
     con = duckdb.connect(DB_PATH)
     init_db(con)
 
