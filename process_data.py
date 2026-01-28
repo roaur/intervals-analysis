@@ -3,17 +3,18 @@ import os
 
 PROCESSED_DIR = "data/processed"
 DB_PATH = "data/intervals.duckdb"
-OUTPUT_FILE = os.path.join(PROCESSED_DIR, "fitness_metrics.parquet")
+OUTPUT_FILE = "fitness_metrics.parquet"
 
 
-def process_data():
-    os.makedirs(PROCESSED_DIR, exist_ok=True)
+def process_data(db_path=DB_PATH, processed_dir=PROCESSED_DIR):
+    os.makedirs(processed_dir, exist_ok=True)
+    output_path = os.path.join(processed_dir, OUTPUT_FILE)
 
-    if not os.path.exists(DB_PATH):
-        print(f"Error: {DB_PATH} not found. Run fetch_data.py first.")
+    if not os.path.exists(db_path):
+        print(f"Error: {db_path} not found. Run fetch_data.py first.")
         return
 
-    con = duckdb.connect(DB_PATH)
+    con = duckdb.connect(db_path)
 
     print("Processing streams from DuckDB...")
 
@@ -71,10 +72,93 @@ def process_data():
     con.execute(query)
 
     # 5. Export
-    con.execute(f"COPY daily_fitness_metrics TO '{OUTPUT_FILE}' (FORMAT PARQUET)")
+    con.execute(query)
+
+    # 5. Export Fitness Metrics
+    con.execute(f"COPY daily_fitness_metrics TO '{output_path}' (FORMAT PARQUET)")
 
     count = con.execute("SELECT COUNT(*) FROM daily_fitness_metrics").fetchone()[0]
-    print(f"Processed data saved to {OUTPUT_FILE}. Rows: {count}")
+    print(f"Processed fitness metrics saved to {output_path}. Rows: {count}")
+
+    # 6. Spatial Data Processing (Routes)
+    print("Processing spatial data (routes)...")
+    try:
+        con.install_extension("spatial")
+        con.load_extension("spatial")
+
+        # We need to construct LineStrings from points.
+        # ST_MakeLine(ST_Point(lat, lon)) grouped by activity and ordered by time.
+        # Note: DuckDB's spatial extension might require points to be constructed first.
+        # Also, we need to handle the list aggregation.
+
+        # Strategy:
+        # 1. Select relevant points (lat/lng not null) ordered by time per activity.
+        # 2. Use list_aggr to create a list of points or geometries?
+        #    Actually, `ST_MakeLine` can take a list of geometries (points).
+
+        spatial_query = """
+            CREATE OR REPLACE TABLE workout_routes AS
+            WITH ordered_points AS (
+                SELECT 
+                    s.activity_id,
+                    s.time,
+                    ST_Point(s.lng, s.lat) as geom,
+                    s.watts,
+                    s.heartrate
+                FROM raw_streams s
+                WHERE s.lat IS NOT NULL AND s.lng IS NOT NULL
+                ORDER BY s.activity_id, s.time
+            ),
+            routes AS (
+                SELECT
+                    activity_id,
+                    ST_MakeLine(list(geom)) as geometry,
+                    list(watts) as watts_stream,
+                    list(heartrate) as hr_stream,
+                    AVG(watts) as avg_watts,
+                    AVG(heartrate) as avg_hr,
+                    MAX(time) - MIN(time) as duration_seconds
+                FROM ordered_points
+                GROUP BY activity_id
+            )
+            SELECT
+                r.*,
+                a.name as activity_name,
+                CAST(a.start_date_local AS DATE) as date
+            FROM routes r
+            JOIN activities a ON r.activity_id = a.id
+        """
+        con.execute(spatial_query)
+
+        # Export to Parquet
+        export_query = f"""
+            COPY (
+                SELECT 
+                    activity_id,
+                    activity_name,
+                    date,
+                    ST_AsText(geometry) as wkt_geometry,
+                    watts_stream,
+                    hr_stream,
+                    avg_watts,
+                    avg_hr,
+                    duration_seconds
+                FROM workout_routes
+                ORDER BY date DESC
+            ) TO '{os.path.join(processed_dir, "workout_routes.parquet")}' (FORMAT PARQUET)
+        """
+        con.execute(export_query)
+
+        route_count = con.execute("SELECT COUNT(*) FROM workout_routes").fetchone()[0]
+        print(
+            f"Processed workout routes saved to {os.path.join(processed_dir, 'workout_routes.parquet')}. Rows: {route_count}"
+        )
+
+    except Exception as e:
+        print(f"Spatial processing failed: {e}")
+        # Don't fail the whole process if spatial fails, unless critical?
+        # Let's verify if spatial extension issues are common.
+        # For now, print error.
 
     con.close()
 
