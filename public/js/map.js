@@ -32,7 +32,8 @@ async function createMap(target, coordinates) {
         layers: [], // Layers will be added by olms
         view: new ol.View({
             center: [0, 0],
-            zoom: 1
+            zoom: 1,
+            constrainResolution: false // Allow fractional zoom for perfect fit
         }),
         controls: [], // No controls for sparkline look
         interactions: [] // No interactions (static)
@@ -60,12 +61,33 @@ async function createMap(target, coordinates) {
 
     map.addLayer(vectorLayer);
 
-    // Fit bounds
-    const extent = vectorLayer.getSource().getExtent();
-    map.getView().fit(extent, {
-        padding: [20, 20, 20, 20],
-        maxZoom: 14 // Prevent excessive zoom on short routes
+    // Robust fitting logic using ResizeObserver
+    const fitMap = () => {
+        const size = map.getSize();
+        // Only fit if the map has actual size
+        if (size && size[0] > 0 && size[1] > 0) {
+            const extent = vectorLayer.getSource().getExtent();
+            if (!ol.extent.isEmpty(extent)) {
+                map.getView().fit(extent, {
+                    padding: [10, 10, 10, 10], // Reduced padding slightly
+                    size: size,
+                    maxZoom: 16,
+                    duration: 0, // Instant fit, no animation
+                    nearest: false
+                });
+            }
+        }
+    };
+
+    // Observer to handle initial layout and resizes
+    const resizeObserver = new ResizeObserver(() => {
+        map.updateSize();
+        fitMap();
     });
+    resizeObserver.observe(target);
+
+    // Initial attempt (in case it's already ready)
+    fitMap();
 
     return map;
 }
