@@ -30,16 +30,32 @@ async function loadData() {
     const statusText = document.getElementById('status-text');
     statusText.textContent = "Loading Parquet Data...";
 
-    const response = await fetch('/data/processed/fitness_metrics.parquet');
-    if (!response.ok) throw new Error("Failed to fetch parquet file");
+    // Load Fitness Metrics
+    const fitRes = await fetch('/data/processed/fitness_metrics.parquet');
+    if (!fitRes.ok) throw new Error("Failed to fetch fitness_metrics.parquet");
+    const fitBuf = await fitRes.arrayBuffer();
+    await db.registerFileBuffer('fitness_metrics.parquet', new Uint8Array(fitBuf));
 
-    const buffer = await response.arrayBuffer();
-    await db.registerFileBuffer('fitness_metrics.parquet', new Uint8Array(buffer));
+    // Load Workout Routes
+    const routeRes = await fetch('/data/processed/workout_routes.parquet');
+    if (!routeRes.ok) console.warn("Failed to fetch workout_routes.parquet"); // Optional
+    else {
+        const routeBuf = await routeRes.arrayBuffer();
+        await db.registerFileBuffer('workout_routes.parquet', new Uint8Array(routeBuf));
+    }
 
     conn = await db.connect();
+
     await conn.query(`
         CREATE VIEW metrics AS SELECT * FROM parquet_scan('fitness_metrics.parquet')
     `);
+
+    // Check if routes file exists before creating view
+    if (routeRes.ok) {
+        await conn.query(`
+            CREATE VIEW routes AS SELECT * FROM parquet_scan('workout_routes.parquet')
+        `);
+    }
 }
 
 async function getBounds() {
@@ -165,11 +181,169 @@ function renderCharts() {
     Plotly.newPlot('distribution-chart', distTraces, distLayout);
 }
 
+function wktToSvgPath(wkt, width, height) {
+    if (!wkt || !wkt.startsWith("LINESTRING")) return "";
+
+    // Parse coordinates: LINESTRING (x y, x y, ...)
+    const content = wkt.substring(wkt.indexOf('(') + 1, wkt.lastIndexOf(')'));
+    const points = content.split(',').map(p => {
+        const [x, y] = p.trim().split(' ').map(Number);
+        return { x, y };
+    });
+
+    if (points.length === 0) return "";
+
+    // Normalize to bounding box
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    points.forEach(p => {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+    });
+
+    // Add padding (5%)
+    const paddingX = (maxX - minX) * 0.05;
+    const paddingY = (maxY - minY) * 0.05;
+    minX -= paddingX; maxX += paddingX;
+    minY -= paddingY; maxY += paddingY;
+
+    const rangeX = maxX - minX || 1;
+    const rangeY = maxY - minY || 1;
+
+    // Scale to SVG dimensions
+    // SVG coordinate system: y increases downwards, but lat increases upwards.
+    // So we flip Y.
+    const path = points.map((p, i) => {
+        const sx = ((p.x - minX) / rangeX) * width;
+        const sy = height - ((p.y - minY) / rangeY) * height;
+        return `${i === 0 ? 'M' : 'L'} ${sx.toFixed(1)} ${sy.toFixed(1)}`;
+    }).join(' ');
+
+    return `<path d="${path}" fill="none" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />`;
+}
+
+// Helper to generate a sparkline path
+function generateSparkline(data, width, height, color) {
+    if (!data || data.length === 0) return "";
+
+    // Simple numeric array expected
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const range = max - min || 1;
+
+    const points = data.map((val, i) => {
+        const x = (i / (data.length - 1)) * width;
+        // Invert Y so higher values are higher (SVG Y is down)
+        const y = height - ((val - min) / range) * height;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+    });
+
+    return `<polyline points="${points.join(' ')}" fill="none" stroke="${color}" stroke-width="1" />`;
+}
+
+async function renderWorkoutCards() {
+    try {
+        const result = await conn.query(`
+            SELECT 
+                activity_id, 
+                activity_name, 
+                date, 
+                wkt_geometry,
+                watts_stream,
+                hr_stream,
+                avg_watts, 
+                avg_hr, 
+                duration_seconds 
+            FROM routes 
+            ORDER BY date DESC 
+            LIMIT 25
+        `);
+
+        const grid = document.getElementById('workout-grid');
+        grid.innerHTML = '';
+
+        const routes = result.toArray();
+        if (routes.length === 0) {
+            grid.innerHTML = '<p style="color: #94a3b8; padding: 1rem;">No route data available.</p>';
+            return;
+        }
+
+        routes.forEach(row => {
+            const card = document.createElement('div');
+            card.className = 'workout-card';
+
+            const hours = (row.duration_seconds / 3600).toFixed(1);
+            const watts = Math.round(row.avg_watts || 0);
+            const hr = Math.round(row.avg_hr || 0);
+
+            // Generate map SVG
+            const svgPath = wktToSvgPath(row.wkt_geometry, 300, 120);
+
+            // Generate sparklines
+            const wattsData = row.watts_stream ? Array.from(row.watts_stream) : [];
+            const hrData = row.hr_stream ? Array.from(row.hr_stream) : [];
+
+            // Simple strict sampling to prevent huge SVGs
+            const sample = (arr, target) => {
+                if (!arr || arr.length <= target) return arr || [];
+                const step = Math.ceil(arr.length / target);
+                return arr.filter((_, i) => i % step === 0);
+            };
+
+            const wattsSample = sample(wattsData, 150);
+            const hrSample = sample(hrData, 150);
+
+            const powerLine = generateSparkline(wattsSample, 300, 40, '#93c5fd');
+            const hrLine = generateSparkline(hrSample, 300, 40, '#fca5a5');
+
+            card.innerHTML = `
+                <div class="card-header">
+                    <span class="card-title" title="${row.activity_name}">${row.activity_name}</span>
+                    <span>${row.date}</span>
+                </div>
+                <div class="card-map">
+                    <svg viewBox="0 0 300 120" preserveAspectRatio="xMidYMid meet" style="z-index: 1;">
+                        ${svgPath}
+                    </svg>
+                    
+                    <div class="card-charts-overlay">
+                        <svg viewBox="0 0 300 40" preserveAspectRatio="none">
+                            <g opacity="0.6">${powerLine}</g>
+                            <g opacity="0.6">${hrLine}</g>
+                        </svg>
+                    </div>
+                </div>
+                <div class="card-stats">
+                    <div class="stat-item">
+                        <span style="color: #fca5a5;">${hr} bpm</span>
+                        <span class="stat-label">Avg HR</span>
+                    </div>
+                    <div class="stat-item">
+                        <span style="color: #93c5fd;">${watts}W</span>
+                        <span class="stat-label">Avg Power</span>
+                    </div>
+                    <div class="stat-item">
+                        <span style="color: #cbd5e1;">${hours}h</span>
+                        <span class="stat-label">Duration</span>
+                    </div>
+                </div>
+            `;
+
+            grid.appendChild(card);
+        });
+
+    } catch (e) {
+        console.error("Error rendering workout cards:", e);
+    }
+}
+
 // App Initialization
 (async () => {
     try {
         await initDuckDB();
         await loadData();
+        await renderWorkoutCards();
 
         document.getElementById('loading').classList.add('hidden');
         document.getElementById('dashboard').classList.remove('hidden');
