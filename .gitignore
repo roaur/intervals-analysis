@@ -177,3 +177,4 @@ pyrightconfig.json
 data/intervals.duckdb
 data/processed/fitness_metrics.parquet
 data/activities.json
+data/processed/workout_routes.parquet
